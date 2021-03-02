@@ -1,0 +1,207 @@
+
+struct module_args {
+	base_url: text;
+	admin_pubkey: pubkey;
+}
+
+import .lib.structure.*;
+import .lib.original.*;
+import .lib.interface.*;
+import .lib.component_definition.*;
+import .lib.ft3.operations.dev_op_account;
+
+object myOriginals_init {
+	initiated: boolean = initiate();
+ 	IOriginal_IERC721_name: text = "IOriginal_IERC721";
+}
+
+object myOriginals {
+	IOriginal_IERC721: interface = defineIOriginalERC721();
+	IERC721: interface = defineIERC721Contract();
+}
+
+
+function initiate(): boolean {
+	initialize_originals();
+	return true;
+}
+
+
+function defineIOriginalERC721(): interface {
+	return defI(interface_(myOriginals_init.IOriginal_IERC721_name, extends([Interface("IDisplayableOriginal")]), [
+		"external_url": prop(
+			optional(),
+			propT(txt())
+		), // not static, each nft can have its own link
+		"image_data": prop(
+			optional(),
+			static(),
+			propB(bytes( max_length = integer.MAX_VALUE))
+		),
+		"background_color": prop(
+			static(),
+			optional(),
+			propT(txt(max_length = 6)) //hex color
+		),
+		"animation_url": prop(
+			optional(),
+			propT(txt())
+		),
+		"youtube_url": prop(
+			optional(),
+			propT(txt())
+		)
+	]));
+}
+
+
+function defineIERC721Contract(): interface {
+	print("Defining IERC721 Interface");
+	return defI(interface_("IERC721", 
+		[
+			"name": prop(
+				static(),
+				propT(txt())
+			),
+			"chain": prop(
+				static(),
+				propT(txt())
+			),
+			"contract": prop(
+				static(),
+				propB(bytes())
+			),
+			"size": prop(
+				static(),
+				propI(int())
+			),
+			"id": prop(
+				readonly(),
+				propIndx(indx())
+			),
+			"original": prop(
+				optional(),
+				readonly(),
+				propInf(inf(Interface(myOriginals_init.IOriginal_IERC721_name)))
+			)
+		]
+	));
+}
+
+
+operation add_erc721_contract(description: text, chain: text, contract: byte_array) {
+	require(is_signer(chain_context.args.admin_pubkey));
+	
+	
+	def_(structure_("mna-nft", implements([Interface("IERC721")]),
+		init([
+			"name": "mna-nft".to_gtv(),
+			"description": description.to_gtv(),
+			"chain": chain.to_gtv(),
+			"contract": contract.to_gtv(),
+			"size": (0).to_gtv()
+		])
+	));
+}
+
+query get_contract(): structure {
+	return Structure("mna-nft");
+}
+
+query get_contract_info() {
+	return map_structure(Structure("mna-nft"), [map_(all_properties(), direct())]);
+}
+
+operation add_erc721_original(name, description: text, designer_name: text, designer_id: byte_array, image_content_type: text, image: text) {
+	require(is_signer(chain_context.args.admin_pubkey));
+	require(image_content_type == "image/jpeg" or image_content_type == "image/png");
+	
+	
+	def_(structure_(name, implements([myOriginals.IOriginal_IERC721]),
+		init([
+			"name": name.to_gtv(),
+			"description": description.to_gtv(),
+			"image": map<text, gtv>([
+				"type": image_content_type.to_gtv(),
+				"data": image.to_gtv()
+			]).to_gtv(),
+			"designer_name": designer_name.to_gtv(),
+			"designer_id": designer_id.to_gtv()
+		])
+	));
+}
+
+operation update_image(name, image_content_type: text, image: text) {
+	require(is_signer(chain_context.args.admin_pubkey));
+	require(image_content_type == "image/jpeg" or image_content_type == "image/png");
+	
+	val imageInstance = require_not_empty(get_static_property_instance(Structure(name), "image"), "Image not found");
+	set_property_text(imageInstance, "data", image);
+	set_property_text(imageInstance, "type", image_content_type);
+}
+
+query get_original(name): structure {
+	return structure_interface@{Structure(name), myOriginals.IOriginal_IERC721}.structure;
+}
+
+query get_original_info(name) {
+	val originalStructure = structure_interface@{Structure(name), myOriginals.IOriginal_IERC721}.structure;
+	return map_structure(originalStructure, [map_(properties(["name", "description", "designer_name", "designer_id"]), direct())]); 
+}
+
+query get_original_count(name) {
+	val originalStructure = structure_interface@{Structure(name), myOriginals.IOriginal_IERC721}.structure;
+	return get_instances_count(originalStructure);
+}
+
+operation add_nft(contract: structure, original: structure) {
+	require(is_signer(chain_context.args.admin_pubkey));
+	
+	
+	val idToAdd = require_not_empty(get_static_property_integer(contract, "size"), "Contract not registered on this Chromia chain");
+	set_static_property_integer(contract, "size", idToAdd+1);
+
+	val original_instance = new_(instance_(original, init([
+		"id": idToAdd.to_gtv().to_bytes().to_gtv(),
+		"index": idToAdd.to_gtv()
+	])));
+	
+	new_(instance_(contract, init([
+		"id": idToAdd.to_gtv(),
+		"original": original_instance.to_gtv()
+	])));
+}
+
+//// JSON structure for NFT
+struct nft_metadata {
+	id: integer;
+	name;
+	description: text;
+	image: text;
+}
+
+query get_nft(id: integer): nft_metadata? {
+	val nft_structure = Structure("mna-nft");
+	val nft_instance = require_not_empty(find_one_index(nft_structure, "id", id), "Id not found");
+	val original = require_not_empty(get_property_instance(nft_instance, "original"), "This Id has no original associated");
+	
+	return nft_metadata(
+		id, 
+		name = get_static_property_text(original.structure, "name")!!,
+		description = get_static_property_text(original.structure, "description")!!,
+		image = chain_context.args.base_url + "dquery/"+ chain_context.blockchain_rid.to_hex() +"?type=get_image&nft_image=" + get_static_property(original.structure, "image")
+	);	
+}
+
+query get_image (nft_image: text): (text, byte_array)? {
+	val niR = integer(nft_image).to_gtv();
+	
+	// get image
+	val img = instance@{rowid.from_gtv(niR)};
+	
+	return (
+		get_property_text(img, "type")!!,
+		byte_array.from_base64((get_property_text(img, "data")!!))
+	);
+}
+

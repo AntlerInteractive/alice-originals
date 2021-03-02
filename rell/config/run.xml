@@ -1,0 +1,26 @@
+<run wipe-db="true">
+    <nodes>
+        <config src="node-config.properties" add-signers="true" />
+    </nodes>
+    <chains>
+        <chain name="erc721-mna" iid="0">
+            <config height="0">
+				<app module="">
+                    <args module="">
+                    	<arg key="base_url"><string>http://localhost:7740/</string></arg>
+                    	<arg key="admin_pubkey"><bytea>036a063b1aa4b5144f96dafdd9ef7061760715a32d7b1db0d0e65db4a3f2c5d3d5</bytea></arg>
+                    </args>
+                    <args module="lib.ft3.core">
+                        <arg key="my_blockchain_name"><string>nft-mna</string></arg>
+                        <arg key="my_blockchain_website"><string>test_website</string></arg>
+                        <arg key="my_blockchain_description"><string>test_description</string></arg>
+                        <arg key="rate_limit_active"><int>0</int></arg>
+                        <arg key="rate_limit_max_points"><int>10</int></arg> <!-- maximum amount of request credit that is possible to keep -->
+                        <arg key="rate_limit_recovery_time"><int>5000</int></arg>
+                        <arg key="rate_limit_points_at_account_creation"><int>1</int></arg>
+                    </args>
+                </app>
+            </config>
+        </chain>
+    </chains>
+</run>
